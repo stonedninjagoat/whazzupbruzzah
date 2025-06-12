@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>MIDI Pattern Extractor</title>
+  <title>MIDI Patterns Extractor</title>
 </head>
 <body>
   <h2>MIDI Pattern Extractor Tool</h2>
@@ -10,6 +10,7 @@
   <button onclick="processCSV()">Process MIDI CSV</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <pre id="output"></pre>
+  <button onclick="findMotifs()">Find Motifs (n-grams)</button>
 
   <script>
     let patternsDict = [];
@@ -122,6 +123,35 @@
       a.click();
       URL.revokeObjectURL(url);
     }
+
+    function findMotifs() {
+  if (!patternsDict) {
+    alert("Please process a MIDI CSV first.");
+    return;
+  }
+
+  const intervals = patternsDict.flat(); // Use full interval stream
+  const minCount = 2;
+  const minLength = 2;
+  const maxLength = 6;
+
+  const motifMap = new Map();
+
+  for (let n = minLength; n <= maxLength; n++) {
+    for (let i = 0; i <= intervals.length - n; i++) {
+      const gram = intervals.slice(i, i + n).join(',');
+      motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
+    }
+  }
+
+  const filtered = [...motifMap.entries()]
+    .filter(([_, count]) => count >= minCount)
+    .sort((a, b) => b[1] - a[1]); // sort by frequency
+
+  const motifsOutput = filtered.map(([gram, count]) => `Motif: [${gram}] x ${count}`).join('\n');
+
+  document.getElementById('output').textContent += `\n\nMotifs (n-grams with freq >= ${minCount}):\n${motifsOutput}`;
+}
   </script>
 </body>
 </html>
