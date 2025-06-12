@@ -3,115 +3,121 @@
 <head>
   <meta charset="UTF-8" />
   <title>MIDI Pattern Extractor</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.27/build/Midi.min.js"></script>
 </head>
 <body>
   <h1>MIDI Pattern Extractor</h1>
-  <input type="file" id="fileInput" accept=".mid" />
-  <button id="downloadCSV">Download Patterns CSV</button>
+  <input type="file" id="csvInput" accept=".csv" />
+  <button onclick="downloadCSV()">Download CSV</button>
   <pre id="output"></pre>
 
   <script>
-    document.getElementById('fileInput').addEventListener('change', async (event) => {
+    let transformedPositions = [];
+    let transformedMIDIs = [];
+    let chords = [];
+    let intervals = [];
+    let patterns = [];
+
+    document.getElementById("csvInput").addEventListener("change", function (event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      const arrayBuffer = await file.arrayBuffer();
-      const midi = new Midi(arrayBuffer);
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const text = e.target.result;
+        const rows = text.trim().split("\n").slice(1); // Skip header
+        const positionMap = {};
 
-      const notes = [];
-      midi.tracks.forEach(track => {
-        track.notes.forEach(note => {
-          notes.push({ time: note.time, midi: note.midi });
-        });
-      });
+        for (const row of rows) {
+          const parts = row.split(",");
+          const position = parseFloat(parts[1]);
+          const midi = parseInt(parts[3]);
 
-      // Keep highest MIDI note per time
-      const timeToNote = {};
-      notes.forEach(({ time, midi }) => {
-        if (!(time in timeToNote) || midi > timeToNote[time]) {
-          timeToNote[time] = midi;
+          if (!positionMap[position]) positionMap[position] = [];
+          positionMap[position].push(midi);
         }
-      });
 
-      const filtered = Object.entries(timeToNote)
-        .map(([time, midi]) => ({ time: parseFloat(time), midi }))
-        .sort((a, b) => a.time - b.time);
+        transformedPositions = [];
+        transformedMIDIs = [];
+        chords = [];
 
-      const pitches = filtered.map(n => n.midi);
-
-      // Convert to intervals
-      const intervals = [];
-      for (let i = 1; i < pitches.length; i++) {
-        intervals.push(pitches[i] - pitches[i - 1]);
-      }
-
-      // Find repeating patterns that minimize group count
-      function findPatterns(seq) {
-        const patterns = [];
-        const seen = new Map();
-
-        let i = 0;
-        while (i < seq.length) {
-          let longestMatch = [];
-          for (let len = seq.length - i; len >= 1; len--) {
-            const candidate = seq.slice(i, i + len).join(',');
-            if (seen.has(candidate)) {
-              longestMatch = seen.get(candidate);
-              break;
-            }
-            const firstIndex = seq.join(',').indexOf(candidate);
-            const secondIndex = seq.join(',').indexOf(candidate, firstIndex + 1);
-            if (secondIndex !== -1) {
-              seen.set(candidate, seq.slice(i, i + len));
-              longestMatch = seq.slice(i, i + len);
-              break;
-            }
-          }
-          if (longestMatch.length > 0) {
-            patterns.push(longestMatch);
-            i += longestMatch.length;
+        for (const pos in positionMap) {
+          const notes = positionMap[pos];
+          if (notes.length === 1) {
+            transformedPositions.push(parseFloat(pos));
+            transformedMIDIs.push(notes[0]);
           } else {
-            patterns.push([seq[i]]);
-            i++;
+            chords.push(notes.sort((a, b) => a - b));
           }
         }
 
-        // Deduplicate patterns
-        const unique = [];
-        const added = new Set();
-        for (const p of patterns) {
-          const key = p.join(',');
-          if (!added.has(key)) {
-            unique.push(p);
-            added.add(key);
+        // Generate intervals
+        intervals = [];
+        for (let i = 1; i < transformedMIDIs.length; i++) {
+          intervals.push(transformedMIDIs[i] - transformedMIDIs[i - 1]);
+        }
+
+        // Pattern detection
+        patterns = extractPatterns(intervals);
+
+        // Output
+        document.getElementById("output").textContent =
+          "Intervals:\n" + intervals.join(", ") +
+          "\n\nChords:\n" + JSON.stringify(chords, null, 2) +
+          "\n\nPatterns:\n" + JSON.stringify(patterns, null, 2);
+      };
+      reader.readAsText(file);
+    });
+
+    function extractPatterns(intervals) {
+      const maxLen = Math.min(5, intervals.length); // Max pattern length
+      const seen = new Set();
+      const patterns = [];
+
+      for (let len = maxLen; len >= 2; len--) {
+        for (let i = 0; i <= intervals.length - len; i++) {
+          const slice = intervals.slice(i, i + len);
+          const key = slice.join("_");
+
+          if (!seen.has(key)) {
+            let count = 0;
+            for (let j = 0; j <= intervals.length - len; j++) {
+              const testSlice = intervals.slice(j, j + len).join("_");
+              if (testSlice === key) count++;
+            }
+            if (count > 1) {
+              seen.add(key);
+              patterns.push(slice);
+            }
           }
         }
-        return unique;
       }
 
-      const patterns = findPatterns(intervals);
+      return patterns;
+    }
 
-      // Output result
-      const out = document.getElementById('output');
-      out.textContent = `Intervals: [${intervals.join(', ')}]\n\nPatterns:\n` +
-        patterns.map(p => `[${p.join(', ')}]`).join('\n');
+    function downloadCSV() {
+      const headers = ["Position", "MIDI", "Interval"];
+      const rows = [headers.join(",")];
 
-      // Download CSV
-      document.getElementById('downloadCSV').onclick = () => {
-        let csv = 'Pattern\n';
-        patterns.forEach(p => {
-          csv += `"${p.join(',')}"\n`;
-        });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'patterns.csv';
-        a.click();
-        URL.revokeObjectURL(url);
-      };
-    });
+      for (let i = 0; i < transformedMIDIs.length; i++) {
+        const pos = transformedPositions[i] || "";
+        const midi = transformedMIDIs[i];
+        const intv = intervals[i - 1] ?? "";
+        rows.push([pos, midi, intv].join(","));
+      }
+
+      const patternHeader = "\n\nPatterns:";
+      const patternLines = patterns.map(p => p.join(" ")).join("\n");
+
+      const blob = new Blob([rows.join("\n") + patternHeader + "\n" + patternLines], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "intervals_patterns.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   </script>
 </body>
 </html>
