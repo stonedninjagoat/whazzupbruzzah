@@ -39,40 +39,35 @@
       });
     }
 
-    // Updated function: remove all notes that are part of chords (multi-note at same position)
     function groupNotes(data) {
-  const chords = [];
-  const transformedPositions = [];
-  const transformedMIDIs = [];
+      const chords = [];
+      const transformedPositions = [];
+      const transformedMIDIs = [];
 
-  // Group notes by position with high precision
-  const grouped = data.reduce((acc, note) => {
-    const key = note.position.toFixed(5);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(note.midi);
-    return acc;
-  }, {});
+      // Group notes by position with high precision
+      const grouped = data.reduce((acc, note) => {
+        const key = note.position.toFixed(5);
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(note.midi);
+        return acc;
+      }, {});
 
-  // Find all positions that have chords (more than one note)
-  const chordPositions = new Set(
-    Object.entries(grouped)
-      .filter(([pos, notes]) => notes.length > 1)
-      .map(([pos]) => pos)
-  );
+      // Find all positions that have chords (more than one note)
+      const chordPositions = new Set(
+        Object.entries(grouped)
+          .filter(([pos, notes]) => notes.length > 1)
+          .map(([pos]) => pos)
+      );
 
-  // Now add only notes whose position is NOT in chordPositions
-  for (const [pos, notes] of Object.entries(grouped)) {
-    if (!chordPositions.has(pos)) {
-      transformedPositions.push(parseFloat(pos));
-      transformedMIDIs.push(notes[0]); // only one note here
-    } else {
-      chords.push({ position: parseFloat(pos), notes: notes });
-    }
-  }
-
-  chordsGlobal = chords;
-  return { transformedPositions, transformedMIDIs };
-}
+      // Now add only notes whose position is NOT in chordPositions
+      for (const [pos, notes] of Object.entries(grouped)) {
+        if (!chordPositions.has(pos)) {
+          transformedPositions.push(parseFloat(pos));
+          transformedMIDIs.push(notes[0]); // only one note here
+        } else {
+          chords.push({ position: parseFloat(pos), notes: notes });
+        }
+      }
 
       chordsGlobal = chords;
       return { transformedPositions, transformedMIDIs };
@@ -98,13 +93,11 @@
         globalIntervals = intervals;
         patternsDict = [];
 
-        let outputText = 
-          `Transformed Positions (single notes only):\n${JSON.stringify(transformedPositions)}\n\n` +
-          `Transformed MIDIs (single notes only):\n${JSON.stringify(transformedMIDIs)}\n\n` +
-          `Chords (all notes at same position removed from singles):\n${JSON.stringify(chordsGlobal)}\n\n` +
+        document.getElementById('output').textContent =
+          `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
+          `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
+          `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
           `Intervals:\n${JSON.stringify(intervals)}`;
-
-        document.getElementById('output').textContent = outputText;
       };
 
       if (fileInput.files.length > 0) {
