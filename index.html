@@ -122,49 +122,51 @@
     }
 
     function findMotifs() {
-      const output = document.getElementById('output');
+  const output = document.getElementById('output');
 
-      if (!globalIntervals.length) {
-        alert('Please process a MIDI CSV first.');
-        return;
-      }
+  if (!globalIntervals.length) {
+    alert('Please process a MIDI CSV first.');
+    return;
+  }
 
-      const minCount = parseInt(document.getElementById('minCount').value, 10);
-      const minLength = parseInt(document.getElementById('minLength').value, 10);
-      const maxLength = parseInt(document.getElementById('maxLength').value, 10);
-      const minSignificance = parseFloat(document.getElementById('minSignificance').value);
+  const minCount = parseInt(document.getElementById('minCount').value, 10);
+  const minLength = parseInt(document.getElementById('minLength').value, 10);
+  const maxLength = parseInt(document.getElementById('maxLength').value, 10);
+  const minSignificance = parseFloat(document.getElementById('minSignificance').value);
 
-      if (minLength > maxLength) {
-        alert('Min Motif Length cannot be greater than Max Motif Length.');
-        return;
-      }
+  if (minLength > maxLength) {
+    alert('Min Motif Length cannot be greater than Max Motif Length.');
+    return;
+  }
 
-      const motifMap = new Map();
+  const motifMap = new Map();
 
-      for (let n = minLength; n <= maxLength; n++) {
-        for (let i = 0; i <= globalIntervals.length - n; i++) {
-          const gram = globalIntervals.slice(i, i + n).join(',');
-          motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
-        }
-      }
-
-      const totalLength = globalIntervals.length;
-
-      motifStats = [...motifMap.entries()]
-        .map(([pattern, count]) => {
-          const length = pattern.split(',').length;
-          const significance = (count * length) / totalLength;
-          return { pattern, count, length, significance };
-        })
-        .filter(m => m.count >= minCount && m.significance >= minSignificance)
-        .sort((a, b) => b.significance - a.significance);
-
-      const motifsOutput = motifStats.map(m =>
-        `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
-      ).join('\n');
-
-      output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
+  for (let n = minLength; n <= maxLength; n++) {
+    for (let i = 0; i <= globalIntervals.length - n; i++) {
+      const slice = globalIntervals.slice(i, i + n);
+      if (slice.includes(0)) continue; // Skip motifs with 0 intervals
+      const gram = slice.join(',');
+      motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
     }
+  }
+
+  const totalLength = globalIntervals.length;
+
+  motifStats = [...motifMap.entries()]
+    .map(([pattern, count]) => {
+      const length = pattern.split(',').length;
+      const significance = (count * length) / totalLength;
+      return { pattern, count, length, significance };
+    })
+    .filter(m => m.count >= minCount && m.significance >= minSignificance)
+    .sort((a, b) => b.significance - a.significance);
+
+  const motifsOutput = motifStats.map(m =>
+    `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
+  ).join('\n');
+
+  output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}, no 0-intervals):\n${motifsOutput}`;
+}
 
     function downloadPatterns() {
       const fileInput = document.getElementById('csvFile');
