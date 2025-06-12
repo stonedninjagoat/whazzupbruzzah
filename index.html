@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>MIDI Pattern Extractor</title>
-  <script src="https://cdn.jsdelivr.net/npm/jsmidgen@latest/dist/jsmidgen.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsmidgen@1.0.3"></script>
 </head>
 <body>
   <h2>MIDI Pattern Extractor Tool</h2>
@@ -28,7 +28,7 @@
     let chordsGlobal = [];
     let motifStats = [];
     let lastGeneratedNotes = [];
-    let uploadedFileName = null; // Store base file name from uploaded CSV
+    let uploadedFileName = null;
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -73,16 +73,14 @@
 
       chordsGlobal = chords;
 
-      console.log('Chords detected:', chords);
-      console.log('Single notes count:', transformedMIDIs.length);
-
       return { transformedPositions, transformedMIDIs };
     }
 
     function getIntervals(midiList) {
       const intervals = [];
       for (let i = 1; i < midiList.length; i++) {
-        intervals.push(midiList[i] - midiList[i - 1]);
+        const diff = midiList[i] - midiList[i - 1];
+        if (diff !== 0) intervals.push(diff); // skip intervals of 0
       }
       return intervals;
     }
@@ -99,7 +97,6 @@
       uploadedFileName = fileInput.files[0].name.replace(/\.[^/.]+$/, "");
 
       const reader = new FileReader();
-
       reader.onload = function (e) {
         try {
           const text = e.target.result;
@@ -122,81 +119,94 @@
     }
 
     function findMotifs() {
-  const output = document.getElementById('output');
+      const output = document.getElementById('output');
 
-  if (!globalIntervals.length) {
-    alert('Please process a MIDI CSV first.');
-    return;
-  }
-
-  const minCount = parseInt(document.getElementById('minCount').value, 10);
-  const minLength = parseInt(document.getElementById('minLength').value, 10);
-  const maxLength = parseInt(document.getElementById('maxLength').value, 10);
-  const minSignificance = parseFloat(document.getElementById('minSignificance').value);
-
-  if (minLength > maxLength) {
-    alert('Min Motif Length cannot be greater than Max Motif Length.');
-    return;
-  }
-
-  const motifMap = new Map();
-
-  for (let n = minLength; n <= maxLength; n++) {
-    for (let i = 0; i <= globalIntervals.length - n; i++) {
-      const slice = globalIntervals.slice(i, i + n);
-      if (slice.includes(0)) continue; // Skip motifs with 0 intervals
-      const gram = slice.join(',');
-      motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
-    }
-  }
-
-  const totalLength = globalIntervals.length;
-
-  motifStats = [...motifMap.entries()]
-    .map(([pattern, count]) => {
-      const length = pattern.split(',').length;
-      const significance = (count * length) / totalLength;
-      return { pattern, count, length, significance };
-    })
-    .filter(m => m.count >= minCount && m.significance >= minSignificance)
-    .sort((a, b) => b.significance - a.significance);
-
-  const motifsOutput = motifStats.map(m =>
-    `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
-  ).join('\n');
-
-  output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}, no 0-intervals):\n${motifsOutput}`;
-}
-
-    function downloadPatterns() {
-      const fileInput = document.getElementById('csvFile');
-      if (!fileInput.files.length) {
-        alert('Please upload a CSV file first.');
+      if (!globalIntervals.length) {
+        alert('Please process a MIDI CSV first.');
         return;
       }
 
-      if (!motifStats.length) {
-        alert('No patterns to export.');
+      const minCount = parseInt(document.getElementById('minCount').value, 10);
+      const minLength = parseInt(document.getElementById('minLength').value, 10);
+      const maxLength = parseInt(document.getElementById('maxLength').value, 10);
+      const minSignificance = parseFloat(document.getElementById('minSignificance').value);
+
+      if (minLength > maxLength) {
+        alert('Min Motif Length cannot be greater than Max Motif Length.');
         return;
       }
 
-      const fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, "");
-      let csv = `Motif,Count,Length,Significance\n`;
-      csv += motifStats.map(m =>
-        `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`
+      const motifMap = new Map();
+
+      for (let n = minLength; n <= maxLength; n++) {
+        for (let i = 0; i <= globalIntervals.length - n; i++) {
+          const slice = globalIntervals.slice(i, i + n);
+          if (slice.includes(0)) continue; // skip any motif with interval 0
+          const gram = slice.join(',');
+          motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
+        }
+      }
+
+      const totalLength = globalIntervals.length;
+
+      motifStats = [...motifMap.entries()]
+        .map(([pattern, count]) => {
+          const length = pattern.split(',').length;
+          const significance = (count * length) / totalLength;
+          return { pattern, count, length, significance };
+        })
+        .filter(m => m.count >= minCount && m.significance >= minSignificance)
+        .sort((a, b) => b.significance - a.significance);
+
+      const motifsOutput = motifStats.map(m =>
+        `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
       ).join('\n');
 
-      csv += `\n\n=== Summary Data ===\n`;
-      csv += `Chords Detected,${chordsGlobal.length}\n`;
-      csv += `Intervals,"${globalIntervals.join(', ')}"\n`;
+      output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
+    }
 
-      const blob = new Blob([csv], { type: 'text/csv' });
+    function generateMusic() {
+      const output = document.getElementById('output');
+      const container = document.getElementById('midiOutput');
+
+      if (!motifStats.length || !globalIntervals.length) {
+        alert('Run "Find Motifs" first.');
+        return;
+      }
+
+      const transitions = buildMotifTransitions(motifStats, globalIntervals);
+      const generatedIntervals = generateMotifSequence(transitions, motifStats);
+      const generatedNotes = intervalsToMIDINotes(generatedIntervals);
+
+      lastGeneratedNotes = generatedNotes.slice();
+
+      output.textContent = `Generated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}\n\n` + output.textContent;
+
+      const file = new JSMIDGEN.File();
+      const track = new JSMIDGEN.Track();
+      file.addTrack(track);
+
+      const durationTicks = 64;
+      generatedNotes.forEach(note => {
+        track.addNote(0, JSMIDGEN.Util.midiPitchFromNoteNumber(note), durationTicks);
+      });
+
+      const blob = new Blob([file.toBytes()], { type: 'audio/midi' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${fileName}_patterns.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+
+      container.innerHTML = `
+        <h3>🎵 Generated MIDI</h3>
+        <audio controls src="${url}"></audio><br>
+        <a href="${url}" download="generated_music.mid">Download MIDI File</a>
+      `;
+    }
+
+    function intervalsToMIDINotes(intervals, basePitch = 60) {
+      const notes = [basePitch];
+      for (const interval of intervals) {
+        notes.push(notes[notes.length - 1] + interval);
+      }
+      return notes;
     }
 
     function buildMotifTransitions(motifs, intervals) {
@@ -211,29 +221,13 @@
         for (const motifA of motifPatterns) {
           const lenA = motifA.arr.length;
           if (i + lenA > intervals.length) continue;
-
-          let matchA = true;
-          for (let j = 0; j < lenA; j++) {
-            if (intervals[i + j] !== motifA.arr[j]) {
-              matchA = false;
-              break;
-            }
-          }
-          if (!matchA) continue;
+          if (!motifA.arr.every((v, j) => intervals[i + j] === v)) continue;
 
           const nextStart = i + lenA;
           for (const motifB of motifPatterns) {
             const lenB = motifB.arr.length;
             if (nextStart + lenB > intervals.length) continue;
-
-            let matchB = true;
-            for (let k = 0; k < lenB; k++) {
-              if (intervals[nextStart + k] !== motifB.arr[k]) {
-                matchB = false;
-                break;
-              }
-            }
-            if (!matchB) continue;
+            if (!motifB.arr.every((v, j) => intervals[nextStart + j] === v)) continue;
 
             if (!transitions.has(motifA.pattern)) transitions.set(motifA.pattern, new Map());
             const nextMap = transitions.get(motifA.pattern);
@@ -258,7 +252,6 @@
 
     function generateMotifSequence(transitions, motifs, maxMotifs = 20) {
       if (!motifs.length) return [];
-
       let current = motifs[Math.floor(Math.random() * motifs.length)].pattern;
       const result = [];
 
@@ -268,7 +261,6 @@
 
         const nextMap = transitions.get(current);
         if (!nextMap) break;
-
         current = chooseWeighted(nextMap);
         if (!current) break;
       }
@@ -276,73 +268,41 @@
       return result;
     }
 
-    function intervalsToMIDINotes(intervals, basePitch = 60) {
-      const notes = [basePitch];
-      for (const interval of intervals) {
-        notes.push(notes[notes.length - 1] + interval);
-      }
-      return notes;
-    }
-
-    function generateMusic() {
-      const output = document.getElementById('output');
-      const container = document.getElementById('midiOutput');
-
-      if (!motifStats.length || !globalIntervals.length) {
-        alert('Run "Find Motifs" first.');
+    function downloadPatterns() {
+      if (!motifStats.length) {
+        alert('No patterns to export.');
         return;
       }
 
-      const transitions = buildMotifTransitions(motifStats, globalIntervals);
-      const generatedIntervals = generateMotifSequence(transitions, motifStats);
-      const generatedNotes = intervalsToMIDINotes(generatedIntervals);
+      let csv = `Motif,Count,Length,Significance\n`;
+      csv += motifStats.map(m =>
+        `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`
+      ).join('\n');
 
-      lastGeneratedNotes = generatedNotes.slice(); // save for export
-
-      output.textContent = `Generated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}\n\n` + output.textContent;
-
-      const file = new Midi();
-      const track = new Midi.Track();
-      file.addTrack(track);
-      const duration = 64;
-
-      generatedNotes.forEach(note => {
-        track.addNote(0, Midi.Util.midiPitchFromNoteNumber(note), duration);
-      });
-
-      const byteString = file.toBytes();
-      const byteArray = new Uint8Array(byteString.length);
-      for (let i = 0; i < byteString.length; i++) {
-        byteArray[i] = byteString.charCodeAt(i);
-      }
-      const midiBlob = new Blob([byteArray], { type: 'audio/midi' });
-      const url = URL.createObjectURL(midiBlob);
-
-      container.innerHTML = `
-        <h3>🎵 Generated MIDI</h3>
-        <audio controls src="${url}"></audio><br>
-        <a href="${url}" download="generated_music.mid">Download MIDI File</a>
-      `;
-    }
-
-    function exportGeneratedMusicCSV() {
-      if (!lastGeneratedNotes.length) {
-        alert('No generated music to export. Please run "Generate Music from Motifs" first.');
-        return;
-      }
-      if (!uploadedFileName) {
-        alert('Original file name not detected. Please reload and upload a CSV file first.');
-        return;
-      }
-
-      // Only MIDI numbers, one per line, no header or index
-      const csv = lastGeneratedNotes.join('\n');
+      csv += `\n\n=== Summary Data ===\n`;
+      csv += `Chords Detected,${chordsGlobal.length}\n`;
+      csv += `Intervals,"${globalIntervals.join(', ')}"\n`;
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${uploadedFileName}_output.csv`;
+      a.download = `${uploadedFileName || 'patterns'}_motifs.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportGeneratedMusicCSV() {
+      if (!lastGeneratedNotes.length) {
+        alert('No generated music to export.');
+        return;
+      }
+      const csv = lastGeneratedNotes.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${uploadedFileName || 'generated'}_output.csv`;
       a.click();
       URL.revokeObjectURL(url);
     }
