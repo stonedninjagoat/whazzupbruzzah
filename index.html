@@ -104,14 +104,14 @@
       }
 
       let csv = 'Motif,Count,Length,Significance\n';
-      csv += motifStats.map(m => `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`).join('\n');
+      csv += motifStats.map(m => `"[${m.pattern}]",${m.count},${m.length},${m.significance.toFixed(4)}`).join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'motif_patterns.csv';
+      a.download = 'motifs.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
