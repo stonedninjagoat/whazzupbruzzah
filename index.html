@@ -302,7 +302,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${uploadedFileName || 'generated'}_output.csv`;
+      a.download = `${uploadedFileName || 'generated'}_randomOutput.csv`;
       a.click();
       URL.revokeObjectURL(url);
     }
