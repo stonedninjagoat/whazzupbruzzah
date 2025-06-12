@@ -19,7 +19,7 @@
   <button onclick="generateMusic()">Generate Music from Motifs</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <button onclick="exportGeneratedMusicCSV()">Export Generated Music as CSV</button>
-  
+
   <pre id="output"></pre>
   <div id="midiOutput"></div>
 
@@ -27,7 +27,8 @@
     let globalIntervals = [];
     let chordsGlobal = [];
     let motifStats = [];
-    let lastGeneratedNotes = []; // Store generated notes globally
+    let lastGeneratedNotes = [];
+    let uploadedFileName = null; // Store base file name from uploaded CSV
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -94,6 +95,8 @@
         alert('Please upload a CSV file first.');
         return;
       }
+
+      uploadedFileName = fileInput.files[0].name.replace(/\.[^/.]+$/, "");
 
       const reader = new FileReader();
 
@@ -292,7 +295,7 @@
       const generatedIntervals = generateMotifSequence(transitions, motifStats);
       const generatedNotes = intervalsToMIDINotes(generatedIntervals);
 
-      lastGeneratedNotes = generatedNotes;  // Save generated notes for export
+      lastGeneratedNotes = generatedNotes.slice(); // save for export
 
       output.textContent = `Generated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}\n\n` + output.textContent;
 
@@ -314,29 +317,30 @@
       const url = URL.createObjectURL(midiBlob);
 
       container.innerHTML = `
-        <h3>Generated MIDI</h3>
+        <h3>🎵 Generated MIDI</h3>
         <audio controls src="${url}"></audio><br>
         <a href="${url}" download="generated_music.mid">Download MIDI File</a>
       `;
     }
 
-    // NEW FUNCTION to export generated notes as CSV
     function exportGeneratedMusicCSV() {
       if (!lastGeneratedNotes.length) {
         alert('No generated music to export. Please run "Generate Music from Motifs" first.');
         return;
       }
+      if (!uploadedFileName) {
+        alert('Original file name not detected. Please reload and upload a CSV file first.');
+        return;
+      }
 
-      let csv = 'MIDI Note\n';
-      lastGeneratedNotes.forEach((note, idx) => {
-        csv += `${note}\n`;
-      });
+      // Only MIDI numbers, one per line, no header or index
+      const csv = lastGeneratedNotes.join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${fileName}_output.csv`;
+      a.download = `${uploadedFileName}_output.csv`;
       a.click();
       URL.revokeObjectURL(url);
     }
