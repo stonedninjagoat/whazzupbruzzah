@@ -1,1 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MIDI Pattern Generator</title>
+</head>
+<body>
+  <h1>MIDI Pattern Generator from CSV</h1>
+  
+  <input type="file" id="csvInput" accept=".csv">
+  <button onclick="generateRandomMusic()">Generate Random Music</button>
+  <button onclick="downloadCSV()">Export CSV</button>
 
+  <pre id="output"></pre>
+
+  <script>
+    let midiSequence = [];
+    let positions = [];
+    let intervals = [];
+    let patterns = [];
+    let generatedMusic = [];
+
+    // --- CSV Upload ---
+    document.getElementById("csvInput").addEventListener("change", function (e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (event) {
+        const lines = event.target.result.trim().split("\n");
+        const header = lines[0].split(",");
+        const posIndex = header.indexOf("Position");
+        const midiIndex = header.indexOf("MIDI");
+
+        positions = [];
+        midiSequence = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",");
+          positions.push(parseFloat(cols[posIndex]));
+          midiSequence.push(parseInt(cols[midiIndex]));
+        }
+
+        computeIntervals();
+        findPatterns();
+        document.getElementById("output").textContent =
+          "Original MIDI:\n" + JSON.stringify(midiSequence) + "\n\n" +
+          "Intervals:\n" + JSON.stringify(intervals) + "\n\n" +
+          "Patterns:\n" + JSON.stringify(patterns);
+      };
+
+      reader.readAsText(file);
+    });
+
+    // --- Step 1: Compute Intervals ---
+    function computeIntervals() {
+      intervals = [];
+      for (let i = 1; i < midiSequence.length; i++) {
+        intervals.push(midiSequence[i] - midiSequence[i - 1]);
+      }
+    }
+
+    // --- Step 2: Find Patterns (greedy minimal covering of subsequences) ---
+    function findPatterns() {
+      patterns = [];
+      const seen = {};
+
+      for (let i = 0; i < intervals.length; i++) {
+        for (let len = 3; len >= 2; len--) {
+          const sub = intervals.slice(i, i + len);
+          if (sub.length < len) continue;
+
+          const key = sub.join(",");
+          if (!seen[key]) {
+            const count = countOccurrences(intervals, sub);
+            if (count >= 2) {
+              patterns.push(sub);
+              seen[key] = true;
+              i += len - 1;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    function countOccurrences(arr, sub) {
+      let count = 0;
+      for (let i = 0; i <= arr.length - sub.length; i++) {
+        let match = true;
+        for (let j = 0; j < sub.length; j++) {
+          if (arr[i + j] !== sub[j]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) count++;
+      }
+      return count;
+    }
+
+    // --- Step 3: Generate Random Music from Patterns ---
+    function generateRandomMusic(length = 20) {
+      if (patterns.length === 0) return;
+
+      generatedMusic = [60]; // start with middle C
+      while (generatedMusic.length < length) {
+        const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+        for (let intv of pattern) {
+          generatedMusic.push(generatedMusic[generatedMusic.length - 1] + intv);
+          if (generatedMusic.length >= length) break;
+        }
+      }
+
+      document.getElementById("output").textContent +=
+        "\n\nGenerated Music:\n" + JSON.stringify(generatedMusic);
+    }
+
+    // --- Step 4: Export to CSV ---
+    function downloadCSV() {
+      if (generatedMusic.length === 0) return;
+
+      let csv = "Index,Pitch\n";
+      for (let i = 0; i < generatedMusic.length; i++) {
+        csv += `${i},${generatedMusic[i]}\n`;
+      }
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "generated_music.csv";
+      link.click();
+    }
+  </script>
+</body>
+</html>
