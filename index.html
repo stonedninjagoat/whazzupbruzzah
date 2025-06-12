@@ -16,8 +16,9 @@
   </div>
   <button onclick="processCSV()">Process MIDI CSV</button>
   <button onclick="findMotifs()">Find Motifs (n-grams)</button>
-  <button onclick="generateMusicCSV()">Export Generated Music as CSV</button>
+  <button onclick="generateMusic()">Generate Music from Motifs</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
+  <button onclick="exportGeneratedMusicCSV()">Export Generated Music as CSV</button>
   
   <pre id="output"></pre>
   <div id="midiOutput"></div>
@@ -26,7 +27,7 @@
     let globalIntervals = [];
     let chordsGlobal = [];
     let motifStats = [];
-    let generatedNotes = [];  // Store generated MIDI notes globally for CSV export
+    let lastGeneratedNotes = []; // Store generated notes globally
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -108,8 +109,6 @@
             `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
             `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
             `Intervals:\n${JSON.stringify(globalIntervals)}`;
-
-          generatedNotes = []; // reset generated notes
         } catch (err) {
           output.textContent = 'Error processing CSV: ' + err.message;
           console.error(err);
@@ -162,8 +161,6 @@
       ).join('\n');
 
       output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
-
-      generatedNotes = []; // reset generated notes
     }
 
     function downloadPatterns() {
@@ -282,7 +279,7 @@
       return notes;
     }
 
-    function generateMusicCSV() {
+    function generateMusic() {
       const output = document.getElementById('output');
       const container = document.getElementById('midiOutput');
 
@@ -293,24 +290,55 @@
 
       const transitions = buildMotifTransitions(motifStats, globalIntervals);
       const generatedIntervals = generateMotifSequence(transitions, motifStats);
-      generatedNotes = intervalsToMIDINotes(generatedIntervals);
+      const generatedNotes = intervalsToMIDINotes(generatedIntervals);
+
+      lastGeneratedNotes = generatedNotes;  // Save generated notes for export
 
       output.textContent = `Generated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}\n\n` + output.textContent;
 
-      // Prepare CSV
-      const csvRows = ['Index,MIDI Note'];
-      generatedNotes.forEach((note, idx) => {
-        csvRows.push(`${idx + 1},${note}`);
-      });
-      const csvContent = csvRows.join('\n');
+      const file = new Midi();
+      const track = new Midi.Track();
+      file.addTrack(track);
+      const duration = 64;
 
-      // Trigger download
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
+      generatedNotes.forEach(note => {
+        track.addNote(0, Midi.Util.midiPitchFromNoteNumber(note), duration);
+      });
+
+      const byteString = file.toBytes();
+      const byteArray = new Uint8Array(byteString.length);
+      for (let i = 0; i < byteString.length; i++) {
+        byteArray[i] = byteString.charCodeAt(i);
+      }
+      const midiBlob = new Blob([byteArray], { type: 'audio/midi' });
+      const url = URL.createObjectURL(midiBlob);
+
       container.innerHTML = `
-        <h3>📄 Generated Music CSV</h3>
-        <a href="${url}" download="generated_music_notes.csv">Download Generated Music as CSV</a>
+        <h3>🎵 Generated MIDI</h3>
+        <audio controls src="${url}"></audio><br>
+        <a href="${url}" download="generated_music.mid">Download MIDI File</a>
       `;
+    }
+
+    // NEW FUNCTION to export generated notes as CSV
+    function exportGeneratedMusicCSV() {
+      if (!lastGeneratedNotes.length) {
+        alert('No generated music to export. Please run "Generate Music from Motifs" first.');
+        return;
+      }
+
+      let csv = 'Index,MIDI Note\n';
+      lastGeneratedNotes.forEach((note, idx) => {
+        csv += `${idx + 1},${note}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'generated_music_notes.csv';
+      a.click();
+      URL.revokeObjectURL(url);
     }
   </script>
 </body>
