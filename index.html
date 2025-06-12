@@ -11,10 +11,11 @@
     <label>Min Motif Length: <input type="number" id="minLength" value="2"></label>
     <label>Max Motif Length: <input type="number" id="maxLength" value="6"></label>
     <label>Min Frequency: <input type="number" id="minCount" value="2"></label>
+    <label>Min Significance: <input type="number" step="0.0001" id="minSignificance" value="0.01"></label>
   </div>
   <button onclick="processCSV()">Process MIDI CSV</button>
-  <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <button onclick="findMotifs()">Find Motifs (n-grams)</button>
+  <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <pre id="output"></pre>
 
   <script>
@@ -97,25 +98,6 @@
       }
     }
 
-    function downloadPatterns() {
-      if (!motifStats.length) {
-        alert("No patterns to export.");
-        return;
-      }
-
-      let csv = 'Motif,Count,Length,Significance\n';
-      csv += motifStats.map(m => `"[${m.pattern}]",${m.count},${m.length},${m.significance.toFixed(4)}`).join('\n');
-
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'motifs.csv';
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
     function findMotifs() {
       if (!globalIntervals.length) {
         alert("Please process a MIDI CSV first.");
@@ -125,6 +107,7 @@
       const minCount = parseInt(document.getElementById('minCount').value);
       const minLength = parseInt(document.getElementById('minLength').value);
       const maxLength = parseInt(document.getElementById('maxLength').value);
+      const minSignificance = parseFloat(document.getElementById('minSignificance').value);
 
       const intervals = globalIntervals;
       const motifMap = new Map();
@@ -138,17 +121,40 @@
 
       const totalLength = intervals.length;
       motifStats = [...motifMap.entries()]
-        .filter(([_, count]) => count >= minCount)
         .map(([pattern, count]) => {
           const length = pattern.split(',').length;
           const significance = (count * length) / totalLength;
           return { pattern, count, length, significance };
         })
+        .filter(m => m.count >= minCount && m.significance >= minSignificance)
         .sort((a, b) => b.significance - a.significance);
 
-      const motifsOutput = motifStats.map(m => `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`).join('\n');
+      const motifsOutput = motifStats.map(m =>
+        `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
+      ).join('\n');
 
-      document.getElementById('output').textContent += `\n\nMotifs (n-grams with freq >= ${minCount}):\n${motifsOutput}`;
+      document.getElementById('output').textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
+    }
+
+    function downloadPatterns() {
+      if (!motifStats.length) {
+        alert("No patterns to export.");
+        return;
+      }
+
+      let csv = 'Motif,Count,Length,Significance\n';
+      csv += motifStats.map(m =>
+        `"[${m.pattern}]",${m.count},${m.length},${m.significance.toFixed(4)}`
+      ).join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'motifs.csv';
+      a.click();
+      URL.revokeObjectURL(url);
     }
   </script>
 </body>
