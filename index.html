@@ -327,9 +327,9 @@
         return;
       }
 
-      let csv = 'Index,MIDI Note\n';
+      let csv = 'MIDI Note\n';
       lastGeneratedNotes.forEach((note, idx) => {
-        csv += `${idx + 1},${note}\n`;
+        csv += `${note}\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv' });
