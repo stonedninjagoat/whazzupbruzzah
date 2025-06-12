@@ -1,240 +1,156 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MIDI Motif Extractor with Significance</title>
-<style>
-  body { font-family: monospace; margin: 1rem; background: #f0f0f0; }
-  h2 { margin-bottom: 0.3rem; }
-  button { margin: 0.3rem 0.7rem 0.7rem 0; padding: 0.3rem 0.7rem; }
-  input[type="number"] { width: 4rem; }
-  #output { background: white; padding: 0.8rem; max-height: 500px; overflow: auto; white-space: pre-wrap; border: 1px solid #ccc; }
-  label { margin-right: 0.5rem; }
-</style>
+  <meta charset="UTF-8">
+  <title>MIDI Pattern Extractor</title>
 </head>
 <body>
-<h2>MIDI Motif Extractor with Statistical Significance</h2>
+  <h2>MIDI Pattern Extractor Tool</h2>
+  <input type="file" id="csvFile" accept=".csv">
+  <button onclick="processCSV()">Process MIDI CSV</button>
+  <button onclick="downloadPatterns()">Download Patterns CSV</button>
+  <button onclick="findMotifs()">Find Motifs (n-grams)</button>
+  <pre id="output"></pre>
 
-<input type="file" id="csvFile" accept=".csv" />
-<button onclick="processCSV()">Process MIDI CSV</button><br/>
+  <script>
+    let patternsDict = [];
+    let globalIntervals = [];
 
-<label>Min motif length: <input type="number" id="minLength" value="2" min="1" /></label>
-<label>Max motif length: <input type="number" id="maxLength" value="6" min="1" /></label>
-<label>Min frequency: <input type="number" id="minCount" value="2" min="1" /></label><br/>
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',');
+      const posIndex = headers.findIndex(h => h.trim().toLowerCase().includes("position"));
+      const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
 
-<button onclick="findMotifs()">Find Motifs</button>
-<button onclick="downloadMotifs()">Download Motifs CSV</button>
-
-<pre id="output"></pre>
-
-<script>
-  let parsedNotes = [];
-  let intervals = [];
-  let motifs = [];
-
-  // Parse CSV, extract Position and MIDI columns
-  function parseCSV(text) {
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(',');
-    const posIndex = headers.findIndex(h => h.trim().toLowerCase().includes("position"));
-    const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
-    if (posIndex === -1 || midiIndex === -1) {
-      alert("CSV must have 'Position' and 'MIDI' columns.");
-      return null;
-    }
-
-    return lines.slice(1).map(line => {
-      const parts = line.split(',');
-      return {
-        position: parseFloat(parts[posIndex]),
-        midi: parseInt(parts[midiIndex])
-      };
-    });
-  }
-
-  // Group notes by position, keep highest midi if multiple at same time
-  function groupNotes(data) {
-    const grouped = {};
-    data.forEach(note => {
-      const key = note.position.toFixed(5);
-      if (!grouped[key] || grouped[key] < note.midi) {
-        grouped[key] = note.midi;
-      }
-    });
-    const positions = Object.keys(grouped).map(k => parseFloat(k)).sort((a,b) => a-b);
-    const midis = positions.map(p => grouped[p.toFixed(5)]);
-    return { positions, midis };
-  }
-
-  // Compute intervals from MIDI pitch sequence
-  function getIntervals(midiList) {
-    const ints = [];
-    for(let i=1; i<midiList.length; i++) {
-      ints.push(midiList[i] - midiList[i-1]);
-    }
-    return ints;
-  }
-
-  // Count all n-grams within min/max length with positions
-  function countNgrams(intervals, minLen, maxLen) {
-    const ngramMap = new Map();
-    for(let n = minLen; n <= maxLen; n++) {
-      for(let i=0; i <= intervals.length - n; i++) {
-        const gram = intervals.slice(i, i+n).join(',');
-        if (!ngramMap.has(gram)) {
-          ngramMap.set(gram, {count:0, positions:[]});
-        }
-        const entry = ngramMap.get(gram);
-        entry.count++;
-        entry.positions.push(i);
-      }
-    }
-    return ngramMap;
-  }
-
-  // Shuffle array for random baseline
-  function shuffle(array) {
-    for(let i = array.length -1; i>0; i--) {
-      const j = Math.floor(Math.random() * (i+1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-  }
-
-  // Create random baseline motif counts by shuffling intervals multiple times
-  function randomBaseline(intervals, minLen, maxLen, iterations=100) {
-    const baselineCounts = new Map();
-    const temp = intervals.slice();
-
-    for(let iter=0; iter<iterations; iter++) {
-      shuffle(temp);
-      const counts = countNgrams(temp, minLen, maxLen);
-      counts.forEach((val, key) => {
-        baselineCounts.set(key, (baselineCounts.get(key) || 0) + val.count);
-      });
-    }
-
-    // Average counts per iteration
-    baselineCounts.forEach((val, key, map) => {
-      map.set(key, val / iterations);
-    });
-
-    return baselineCounts;
-  }
-
-  // Main CSV processing
-  function processCSV() {
-    const fileInput = document.getElementById('csvFile');
-    if(fileInput.files.length === 0) {
-      alert("Please upload a CSV file first.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = e => {
-      parsedNotes = parseCSV(e.target.result);
-      if(!parsedNotes) return;
-      const grouped = groupNotes(parsedNotes);
-      intervals = getIntervals(grouped.midis);
-      document.getElementById('output').textContent =
-        `Processed notes count: ${parsedNotes.length}\n` +
-        `Unique time positions: ${grouped.positions.length}\n` +
-        `Total intervals: ${intervals.length}\n\n` +
-        `First 20 intervals:\n${intervals.slice(0,20).join(', ')}\n\n` +
-        `Ready to find motifs.`;
-      motifs = [];
-    };
-    reader.readAsText(fileInput.files[0]);
-  }
-
-  // Find motifs with frequency and score, compare to baseline, show top results
-  function findMotifs() {
-    if(!intervals.length) {
-      alert("No interval data found. Please process CSV first.");
-      return;
-    }
-    const minLength = parseInt(document.getElementById('minLength').value);
-    const maxLength = parseInt(document.getElementById('maxLength').value);
-    const minCount = parseInt(document.getElementById('minCount').value);
-    if(minLength > maxLength) {
-      alert("Min length cannot be greater than max length.");
-      return;
-    }
-
-    // Count motifs in original intervals
-    const motifMap = countNgrams(intervals, minLength, maxLength);
-
-    // Filter motifs by minCount
-    let filtered = [...motifMap.entries()].filter(([k,v]) => v.count >= minCount);
-
-    if(filtered.length === 0) {
-      document.getElementById('output').textContent +=
-        `\n\nNo motifs found with frequency >= ${minCount}.`;
-      return;
-    }
-
-    // Compute baseline averages
-    document.getElementById('output').textContent += "\n\nComputing random baseline (this may take a moment)...";
-    setTimeout(() => {
-      const baseline = randomBaseline(intervals, minLength, maxLength, 100);
-
-      // Calculate motif scores (freq * length) and significance (freq vs baseline)
-      motifs = filtered.map(([gram, data]) => {
-        const length = gram.split(',').length;
-        const freq = data.count;
-        const baseFreq = baseline.get(gram) || 0;
-        const score = freq * length;
-        const signif = baseFreq === 0 ? "High" : (freq / baseFreq).toFixed(2);
+      return lines.slice(1).map(line => {
+        const parts = line.split(',');
         return {
-          motif: gram,
-          length,
-          freq,
-          baseFreq,
-          score,
-          signif,
-          positions: data.positions
+          position: parseFloat(parts[posIndex]),
+          midi: parseInt(parts[midiIndex])
         };
       });
-
-      // Sort by combined score descending
-      motifs.sort((a,b) => b.score - a.score);
-
-      // Display top 20 motifs
-      const top = motifs.slice(0,20);
-      let out = `Found ${motifs.length} motifs with freq >= ${minCount}.\nTop motifs by score (freq*length):\n\n`;
-      out += top.map(m => 
-        `Motif: [${m.motif}]\n` +
-        `  Length: ${m.length}, Frequency: ${m.freq}, Baseline Avg: ${m.baseFreq.toFixed(2)}\n` +
-        `  Score (freq*length): ${m.score}\n` +
-        `  Significance Ratio (freq / baseline): ${m.signif}\n` +
-        `  Positions: ${m.positions.join(', ')}\n`
-      ).join('\n');
-
-      document.getElementById('output').textContent = out;
-
-    }, 20);
-  }
-
-  // Export motifs CSV: motif,length,freq,baseline,score,significance,positions
-  function downloadMotifs() {
-    if(!motifs.length) {
-      alert("No motifs to export. Please run 'Find Motifs' first.");
-      return;
     }
 
-    let csv = 'motif,length,frequency,baseline_avg,score,significance_ratio,positions\n';
-    motifs.forEach(m => {
-      csv += `"${m.motif}",${m.length},${m.freq},${m.baseFreq.toFixed(2)},${m.score},${m.signif},"${m.positions.join(' ')}"\n`;
-    });
+    function groupNotes(data) {
+      const chords = [];
+      const transformedPositions = [];
+      const transformedMIDIs = [];
 
-    const blob = new Blob([csv], {type: 'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'motifs.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-</script>
+      const grouped = data.reduce((acc, note) => {
+        const key = note.position.toFixed(5);
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(note.midi);
+        return acc;
+      }, {});
 
+      for (const [pos, notes] of Object.entries(grouped)) {
+        if (notes.length === 1) {
+          transformedPositions.push(parseFloat(pos));
+          transformedMIDIs.push(notes[0]);
+        } else {
+          chords.push(notes);
+        }
+      }
+
+      return { transformedPositions, transformedMIDIs, chords };
+    }
+
+    function getIntervals(midiList) {
+      const intervals = [];
+      for (let i = 1; i < midiList.length; i++) {
+        intervals.push(midiList[i] - midiList[i - 1]);
+      }
+      return intervals;
+    }
+
+    function findPatterns(intervals) {
+      const maxLen = Math.floor(intervals.length / 2);
+      const patterns = new Set();
+
+      for (let len = maxLen; len >= 2; len--) {
+        for (let i = 0; i <= intervals.length - len; i++) {
+          const pattern = intervals.slice(i, i + len).join(',');
+          const count = intervals.join(',').split(pattern).length - 1;
+          if (count > 1) patterns.add(pattern);
+        }
+      }
+
+      return Array.from(patterns).map(p => p.split(',').map(Number));
+    }
+
+    function processCSV() {
+      const fileInput = document.getElementById('csvFile');
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        const text = e.target.result;
+        const parsedData = parseCSV(text);
+        const { transformedPositions, transformedMIDIs, chords } = groupNotes(parsedData);
+        const intervals = getIntervals(transformedMIDIs);
+        globalIntervals = intervals;
+        const patterns = findPatterns(intervals);
+        patternsDict = patterns;
+
+        document.getElementById('output').textContent =
+          `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
+          `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
+          `Chords:\n${JSON.stringify(chords)}\n\n` +
+          `Intervals:\n${JSON.stringify(intervals)}\n\n` +
+          `Patterns:\n${JSON.stringify(patternsDict)}`;
+      };
+
+      if (fileInput.files.length > 0) {
+        reader.readAsText(fileInput.files[0]);
+      } else {
+        alert("Please upload a CSV file first.");
+      }
+    }
+
+    function downloadPatterns() {
+      if (!patternsDict.length) {
+        alert("No patterns to export.");
+        return;
+      }
+
+      const csv = patternsDict.map(p => p.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'patterns.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function findMotifs() {
+      if (!globalIntervals.length) {
+        alert("Please process a MIDI CSV first.");
+        return;
+      }
+
+      const intervals = globalIntervals;
+      const minCount = 2;
+      const minLength = 2;
+      const maxLength = 6;
+
+      const motifMap = new Map();
+
+      for (let n = minLength; n <= maxLength; n++) {
+        for (let i = 0; i <= intervals.length - n; i++) {
+          const gram = intervals.slice(i, i + n).join(',');
+          motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
+        }
+      }
+
+      const filtered = [...motifMap.entries()]
+        .filter(([_, count]) => count >= minCount)
+        .sort((a, b) => b[1] - a[1]);
+
+      const motifsOutput = filtered.map(([gram, count]) => `Motif: [${gram}] x ${count}`).join('\n');
+
+      document.getElementById('output').textContent += `\n\nMotifs (n-grams with freq >= ${minCount}):\n${motifsOutput}`;
+    }
+  </script>
 </body>
 </html>
