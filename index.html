@@ -1,134 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>MIDI Pattern Generator</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Melodic Pattern Extractor</title>
 </head>
 <body>
-  <h1>MIDI Pattern Generator from CSV</h1>
-  
-  <input type="file" id="csvInput" accept=".csv">
-  <button onclick="generateRandomMusic()">Generate Random Music</button>
-  <button onclick="downloadCSV()">Export CSV</button>
-
+  <h1>Melodic Pattern Extractor</h1>
+  <input type="file" id="fileInput" accept=".csv" />
+  <button onclick="exportPatterns()">Export Patterns CSV</button>
   <pre id="output"></pre>
 
   <script>
-    let midiSequence = [];
-    let positions = [];
-    let intervals = [];
     let patterns = [];
-    let generatedMusic = [];
 
-    // --- CSV Upload ---
-    document.getElementById("csvInput").addEventListener("change", function (e) {
+    document.getElementById("fileInput").addEventListener("change", function (e) {
       const file = e.target.files[0];
+      if (!file) return;
+
       const reader = new FileReader();
-
       reader.onload = function (event) {
-        const lines = event.target.result.trim().split("\n");
-        const header = lines[0].split(",");
-        const posIndex = header.indexOf("Position");
-        const midiIndex = header.indexOf("MIDI");
+        const text = event.target.result;
+        const lines = text.trim().split("\n");
+        const midiNumbers = [];
 
-        positions = [];
-        midiSequence = [];
+        // Skip header, parse MIDI column (assumes it's labeled 'MIDI')
+        const headers = lines[0].split(",");
+        const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
 
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(",");
-          positions.push(parseFloat(cols[posIndex]));
-          midiSequence.push(parseInt(cols[midiIndex]));
+          midiNumbers.push(parseInt(cols[midiIndex]));
         }
 
-        computeIntervals();
-        findPatterns();
-        document.getElementById("output").textContent =
-          "Original MIDI:\n" + JSON.stringify(midiSequence) + "\n\n" +
-          "Intervals:\n" + JSON.stringify(intervals) + "\n\n" +
-          "Patterns:\n" + JSON.stringify(patterns);
-      };
+        const intervals = getIntervals(midiNumbers);
+        patterns = extractPatterns(intervals);
 
+        document.getElementById("output").textContent =
+          "MIDI: " + midiNumbers.join(", ") + "\n" +
+          "Intervals: " + intervals.join(", ") + "\n\n" +
+          "Patterns:\n" + JSON.stringify(patterns, null, 2);
+      };
       reader.readAsText(file);
     });
 
-    // --- Step 1: Compute Intervals ---
-    function computeIntervals() {
-      intervals = [];
-      for (let i = 1; i < midiSequence.length; i++) {
-        intervals.push(midiSequence[i] - midiSequence[i - 1]);
+    function getIntervals(midiArray) {
+      const intervals = [];
+      for (let i = 1; i < midiArray.length; i++) {
+        intervals.push(midiArray[i] - midiArray[i - 1]);
       }
+      return intervals;
     }
 
-    // --- Step 2: Find Patterns (greedy minimal covering of subsequences) ---
-    function findPatterns() {
-      patterns = [];
+    function extractPatterns(intervals) {
       const seen = {};
+      const groups = [];
 
       for (let i = 0; i < intervals.length; i++) {
         for (let len = 3; len >= 2; len--) {
-          const sub = intervals.slice(i, i + len);
-          if (sub.length < len) continue;
-
-          const key = sub.join(",");
-          if (!seen[key]) {
-            const count = countOccurrences(intervals, sub);
-            if (count >= 2) {
-              patterns.push(sub);
-              seen[key] = true;
-              i += len - 1;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    function countOccurrences(arr, sub) {
-      let count = 0;
-      for (let i = 0; i <= arr.length - sub.length; i++) {
-        let match = true;
-        for (let j = 0; j < sub.length; j++) {
-          if (arr[i + j] !== sub[j]) {
-            match = false;
+          if (i + len > intervals.length) continue;
+          const slice = intervals.slice(i, i + len).join(",");
+          if (seen[slice] !== undefined) {
+            groups.push(intervals.slice(i, i + len));
+            i += len - 1;
             break;
+          } else {
+            seen[slice] = true;
           }
         }
-        if (match) count++;
       }
-      return count;
-    }
 
-    // --- Step 3: Generate Random Music from Patterns ---
-    function generateRandomMusic(length = 20) {
-      if (patterns.length === 0) return;
-
-      generatedMusic = [60]; // start with middle C
-      while (generatedMusic.length < length) {
-        const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-        for (let intv of pattern) {
-          generatedMusic.push(generatedMusic[generatedMusic.length - 1] + intv);
-          if (generatedMusic.length >= length) break;
+      // Add any remaining ungrouped intervals
+      let cursor = 0;
+      let covered = new Array(intervals.length).fill(false);
+      for (let g of groups) {
+        const idx = intervals.join(",").indexOf(g.join(","));
+        for (let i = 0; i < g.length; i++) {
+          covered[cursor + i] = true;
         }
+        cursor += g.length;
       }
 
-      document.getElementById("output").textContent +=
-        "\n\nGenerated Music:\n" + JSON.stringify(generatedMusic);
+      let leftover = [];
+      for (let i = 0; i < intervals.length; i++) {
+        if (!covered[i]) leftover.push([intervals[i]]);
+      }
+
+      return [...groups, ...leftover];
     }
 
-    // --- Step 4: Export to CSV ---
-    function downloadCSV() {
-      if (generatedMusic.length === 0) return;
+    function exportPatterns() {
+      if (patterns.length === 0) return alert("No patterns to export.");
 
-      let csv = "Index,Pitch\n";
-      for (let i = 0; i < generatedMusic.length; i++) {
-        csv += `${i},${generatedMusic[i]}\n`;
-      }
+      let csvContent = "data:text/csv;charset=utf-8,PatternID,Pattern\n";
+      patterns.forEach((pattern, idx) => {
+        csvContent += `${idx + 1},"${pattern.join(' ')}"\n`;
+      });
 
-      const blob = new Blob([csv], { type: "text/csv" });
+      const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "generated_music.csv";
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "patterns.csv");
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     }
   </script>
 </body>
