@@ -1,120 +1,124 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>MIDI Pattern Extractor</title>
 </head>
 <body>
-  <h1>MIDI Pattern Extractor</h1>
-  <input type="file" id="csvInput" accept=".csv" />
-  <button onclick="downloadCSV()">Download CSV</button>
+  <h2>MIDI Pattern Extractor Tool</h2>
+  <input type="file" id="csvFile" accept=".csv" />
+  <button onclick="processCSV()">Process MIDI CSV</button>
+  <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <pre id="output"></pre>
 
   <script>
-    let transformedPositions = [];
-    let transformedMIDIs = [];
-    let chords = [];
-    let intervals = [];
-    let patterns = [];
+    let patternsDict = [];
 
-    document.getElementById("csvInput").addEventListener("change", function (event) {
-      const file = event.target.files[0];
-      if (!file) return;
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',');
+      const posIndex = headers.findIndex(h => h.trim().toLowerCase().includes("position"));
+      const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
 
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        const text = e.target.result;
-        const rows = text.trim().split("\n").slice(1); // Skip header
-        const positionMap = {};
+      const data = lines.slice(1).map(line => {
+        const parts = line.split(',');
+        return {
+          position: parseFloat(parts[posIndex]),
+          midi: parseInt(parts[midiIndex])
+        };
+      });
 
-        for (const row of rows) {
-          const parts = row.split(",");
-          const position = parseFloat(parts[1]);
-          const midi = parseInt(parts[3]);
+      return data;
+    }
 
-          if (!positionMap[position]) positionMap[position] = [];
-          positionMap[position].push(midi);
+    function groupNotes(data) {
+      const chords = [];
+      const transformedPositions = [];
+      const transformedMIDIs = [];
+
+      const grouped = data.reduce((acc, note) => {
+        const key = note.position.toFixed(5);
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(note.midi);
+        return acc;
+      }, {});
+
+      for (const [pos, notes] of Object.entries(grouped)) {
+        if (notes.length === 1) {
+          transformedPositions.push(parseFloat(pos));
+          transformedMIDIs.push(notes[0]);
+        } else {
+          chords.push(notes);
         }
+      }
 
-        transformedPositions = [];
-        transformedMIDIs = [];
-        chords = [];
+      return { transformedPositions, transformedMIDIs, chords };
+    }
 
-        for (const pos in positionMap) {
-          const notes = positionMap[pos];
-          if (notes.length === 1) {
-            transformedPositions.push(parseFloat(pos));
-            transformedMIDIs.push(notes[0]);
-          } else {
-            chords.push(notes.sort((a, b) => a - b));
-          }
-        }
+    function getIntervals(midiList) {
+      const intervals = [];
+      for (let i = 1; i < midiList.length; i++) {
+        intervals.push(midiList[i] - midiList[i - 1]);
+      }
+      return intervals;
+    }
 
-        // Generate intervals
-        intervals = [];
-        for (let i = 1; i < transformedMIDIs.length; i++) {
-          intervals.push(transformedMIDIs[i] - transformedMIDIs[i - 1]);
-        }
-
-        // Pattern detection
-        patterns = extractPatterns(intervals);
-
-        // Output
-        document.getElementById("output").textContent =
-          "Intervals:\n" + intervals.join(", ") +
-          "\n\nChords:\n" + JSON.stringify(chords, null, 2) +
-          "\n\nPatterns:\n" + JSON.stringify(patterns, null, 2);
-      };
-      reader.readAsText(file);
-    });
-
-    function extractPatterns(intervals) {
-      const maxLen = Math.min(5, intervals.length); // Max pattern length
-      const seen = new Set();
-      const patterns = [];
+    function findPatterns(intervals) {
+      const maxLen = Math.floor(intervals.length / 2);
+      const patterns = new Set();
 
       for (let len = maxLen; len >= 2; len--) {
         for (let i = 0; i <= intervals.length - len; i++) {
-          const slice = intervals.slice(i, i + len);
-          const key = slice.join("_");
-
-          if (!seen.has(key)) {
-            let count = 0;
-            for (let j = 0; j <= intervals.length - len; j++) {
-              const testSlice = intervals.slice(j, j + len).join("_");
-              if (testSlice === key) count++;
-            }
-            if (count > 1) {
-              seen.add(key);
-              patterns.push(slice);
-            }
-          }
+          const pattern = intervals.slice(i, i + len).join(',');
+          const count = intervals.join(',').split(pattern).length - 1;
+          if (count > 1) patterns.add(pattern);
         }
       }
 
-      return patterns;
+      return Array.from(patterns).map(p => p.split(',').map(Number));
     }
 
-    function downloadCSV() {
-      const headers = ["Position", "MIDI", "Interval"];
-      const rows = [headers.join(",")];
+    function processCSV() {
+      const fileInput = document.getElementById('csvFile');
+      const reader = new FileReader();
 
-      for (let i = 0; i < transformedMIDIs.length; i++) {
-        const pos = transformedPositions[i] || "";
-        const midi = transformedMIDIs[i];
-        const intv = intervals[i - 1] ?? "";
-        rows.push([pos, midi, intv].join(","));
+      reader.onload = function (e) {
+        const text = e.target.result;
+        const parsedData = parseCSV(text);
+        const { transformedPositions, transformedMIDIs, chords } = groupNotes(parsedData);
+        const intervals = getIntervals(transformedMIDIs);
+        const patterns = findPatterns(intervals);
+        patternsDict = patterns;
+
+        const output = document.getElementById('output');
+        output.textContent = 
+          `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
+          `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
+          `Chords:\n${JSON.stringify(chords)}\n\n` +
+          `Intervals:\n${JSON.stringify(intervals)}\n\n` +
+          `Patterns:\n${JSON.stringify(patternsDict)}`;
+      };
+
+      if (fileInput.files.length > 0) {
+        reader.readAsText(fileInput.files[0]);
+      } else {
+        alert("Please upload a CSV file first.");
+      }
+    }
+
+    function downloadPatterns() {
+      if (!patternsDict.length) {
+        alert("No patterns to export.");
+        return;
       }
 
-      const patternHeader = "\n\nPatterns:";
-      const patternLines = patterns.map(p => p.join(" ")).join("\n");
-
-      const blob = new Blob([rows.join("\n") + patternHeader + "\n" + patternLines], { type: "text/csv" });
+      const csv = patternsDict.map(p => p.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
 
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
-      a.download = "intervals_patterns.csv";
+      a.download = 'patterns.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
