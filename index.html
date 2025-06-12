@@ -2,109 +2,112 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Melodic Pattern Extractor</title>
+  <title>MIDI Pattern Extractor</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 200px; }
+    button { margin-top: 10px; }
+  </style>
 </head>
 <body>
-  <h1>Melodic Pattern Extractor</h1>
-  <input type="file" id="fileInput" accept=".csv" />
-  <button onclick="exportPatterns()">Export Patterns CSV</button>
-  <pre id="output"></pre>
 
-  <script>
-    let patterns = [];
+<h2>MIDI Pattern Extractor</h2>
+<input type="file" id="fileInput" accept=".csv" />
+<button onclick="downloadCSV()">Download Pattern CSV</button>
+<pre id="output"></pre>
 
-    document.getElementById("fileInput").addEventListener("change", function (e) {
-      const file = e.target.files[0];
-      if (!file) return;
+<script>
+let patternDictionary = [];
 
-      const reader = new FileReader();
-      reader.onload = function (event) {
-        const text = event.target.result;
-        const lines = text.trim().split("\n");
-        const midiNumbers = [];
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const text = event.target.result;
+    processCSV(text);
+  };
+  reader.readAsText(file);
+});
 
-        // Skip header, parse MIDI column (assumes it's labeled 'MIDI')
-        const headers = lines[0].split(",");
-        const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
+function processCSV(csv) {
+  const lines = csv.trim().split('\n');
+  const headers = lines[0].split(',');
+  const posIndex = headers.findIndex(h => h.toLowerCase().includes('position'));
+  const midiIndex = headers.findIndex(h => h.toLowerCase().includes('midi'));
 
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(",");
-          midiNumbers.push(parseInt(cols[midiIndex]));
-        }
+  const data = lines.slice(1).map(line => {
+    const cells = line.split(',');
+    return { pos: parseFloat(cells[posIndex]), midi: parseInt(cells[midiIndex]) };
+  });
 
-        const intervals = getIntervals(midiNumbers);
-        patterns = extractPatterns(intervals);
+  // Step 1: Deduplicate by position, keep highest MIDI
+  const filtered = Object.values(data.reduce((acc, { pos, midi }) => {
+    if (!acc[pos] || acc[pos].midi < midi) acc[pos] = { pos, midi };
+    return acc;
+  }, {})).sort((a, b) => a.pos - b.pos);
 
-        document.getElementById("output").textContent =
-          "MIDI: " + midiNumbers.join(", ") + "\n" +
-          "Intervals: " + intervals.join(", ") + "\n\n" +
-          "Patterns:\n" + JSON.stringify(patterns, null, 2);
-      };
-      reader.readAsText(file);
-    });
+  const midiSequence = filtered.map(d => d.midi);
 
-    function getIntervals(midiArray) {
-      const intervals = [];
-      for (let i = 1; i < midiArray.length; i++) {
-        intervals.push(midiArray[i] - midiArray[i - 1]);
+  // Step 2: Convert MIDI to interval sequence
+  const intervals = [];
+  for (let i = 1; i < midiSequence.length; i++) {
+    intervals.push(midiSequence[i] - midiSequence[i - 1]);
+  }
+
+  // Step 3: Pattern extraction using greedy match
+  const patterns = [];
+  let i = 0;
+  while (i < intervals.length) {
+    let found = false;
+    for (let len = Math.min(5, intervals.length - i); len >= 2; len--) {
+      const candidate = intervals.slice(i, i + len);
+      const firstIndex = findSubArray(intervals, candidate, 0);
+      const secondIndex = findSubArray(intervals, candidate, i + 1);
+      if (secondIndex !== -1) {
+        patterns.push(candidate);
+        i += len;
+        found = true;
+        break;
       }
-      return intervals;
     }
-
-    function extractPatterns(intervals) {
-      const seen = {};
-      const groups = [];
-
-      for (let i = 0; i < intervals.length; i++) {
-        for (let len = 3; len >= 2; len--) {
-          if (i + len > intervals.length) continue;
-          const slice = intervals.slice(i, i + len).join(",");
-          if (seen[slice] !== undefined) {
-            groups.push(intervals.slice(i, i + len));
-            i += len - 1;
-            break;
-          } else {
-            seen[slice] = true;
-          }
-        }
-      }
-
-      // Add any remaining ungrouped intervals
-      let cursor = 0;
-      let covered = new Array(intervals.length).fill(false);
-      for (let g of groups) {
-        const idx = intervals.join(",").indexOf(g.join(","));
-        for (let i = 0; i < g.length; i++) {
-          covered[cursor + i] = true;
-        }
-        cursor += g.length;
-      }
-
-      let leftover = [];
-      for (let i = 0; i < intervals.length; i++) {
-        if (!covered[i]) leftover.push([intervals[i]]);
-      }
-
-      return [...groups, ...leftover];
+    if (!found) {
+      patterns.push([intervals[i]]);
+      i++;
     }
+  }
 
-    function exportPatterns() {
-      if (patterns.length === 0) return alert("No patterns to export.");
+  patternDictionary = patterns;
 
-      let csvContent = "data:text/csv;charset=utf-8,PatternID,Pattern\n";
-      patterns.forEach((pattern, idx) => {
-        csvContent += `${idx + 1},"${pattern.join(' ')}"\n`;
-      });
+  document.getElementById('output').textContent =
+    'Filtered MIDI: ' + JSON.stringify(midiSequence) + '\n\n' +
+    'Intervals: ' + JSON.stringify(intervals) + '\n\n' +
+    'Patterns:\n' + patterns.map(p => JSON.stringify(p)).join('\n');
+}
 
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "patterns.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+// Utility: find a subarray in array
+function findSubArray(arr, sub, from = 0) {
+  for (let i = from; i <= arr.length - sub.length; i++) {
+    if (arr.slice(i, i + sub.length).join(',') === sub.join(',')) {
+      return i;
     }
-  </script>
+  }
+  return -1;
+}
+
+// Download patterns as CSV
+function downloadCSV() {
+  if (!patternDictionary.length) return alert("No patterns to download!");
+  const csv = patternDictionary.map(p => p.join(' ')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'patterns.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+
 </body>
 </html>
