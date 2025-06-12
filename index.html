@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>MIDI Pattern Extractor</title>
 </head>
 <body>
   <h2>MIDI Pattern Extractor Tool</h2>
-  <input type="file" id="csvFile" accept=".csv">
+  <input type="file" id="csvFile" accept=".csv" />
   <div>
-    <label>Min Motif Length: <input type="number" id="minLength" value="2"></label>
-    <label>Max Motif Length: <input type="number" id="maxLength" value="6"></label>
-    <label>Min Frequency: <input type="number" id="minCount" value="2"></label>
-    <label>Min Significance: <input type="number" step="0.0001" id="minSignificance" value="0.01"></label>
+    <label>Min Motif Length: <input type="number" id="minLength" value="2" /></label>
+    <label>Max Motif Length: <input type="number" id="maxLength" value="6" /></label>
+    <label>Min Frequency: <input type="number" id="minCount" value="2" /></label>
+    <label>Min Significance: <input type="number" step="0.0001" id="minSignificance" value="0.01" /></label>
   </div>
   <button onclick="processCSV()">Process MIDI CSV</button>
   <button onclick="findMotifs()">Find Motifs (n-grams)</button>
@@ -19,7 +19,6 @@
   <pre id="output"></pre>
 
   <script>
-    let patternsDict = [];
     let globalIntervals = [];
     let chordsGlobal = [];
     let motifStats = [];
@@ -27,8 +26,13 @@
     function parseCSV(text) {
       const lines = text.trim().split('\n');
       const headers = lines[0].split(',');
-      const posIndex = headers.findIndex(h => h.trim().toLowerCase().includes("position"));
-      const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes("midi"));
+      const posIndex = headers.findIndex(h => h.trim().toLowerCase().includes('position'));
+      const midiIndex = headers.findIndex(h => h.trim().toLowerCase().includes('midi'));
+
+      if (posIndex === -1 || midiIndex === -1) {
+        alert('CSV must contain "Position" and "MIDI" columns.');
+        throw new Error('Missing required CSV columns');
+      }
 
       return lines.slice(1).map(line => {
         const parts = line.split(',');
@@ -44,7 +48,7 @@
       const transformedPositions = [];
       const transformedMIDIs = [];
 
-      // Group notes by position with high precision
+      // Group notes by position (fixed to 5 decimals for precision)
       const grouped = data.reduce((acc, note) => {
         const key = note.position.toFixed(5);
         if (!acc[key]) acc[key] = [];
@@ -52,24 +56,21 @@
         return acc;
       }, {});
 
-      // Find all positions that have chords (more than one note)
-      const chordPositions = new Set(
-        Object.entries(grouped)
-          .filter(([pos, notes]) => notes.length > 1)
-          .map(([pos]) => pos)
-      );
-
-      // Now add only notes whose position is NOT in chordPositions
+      // Separate chords (positions with multiple notes) from single notes
       for (const [pos, notes] of Object.entries(grouped)) {
-        if (!chordPositions.has(pos)) {
-          transformedPositions.push(parseFloat(pos));
-          transformedMIDIs.push(notes[0]); // only one note here
+        if (notes.length > 1) {
+          chords.push({ position: parseFloat(pos), notes });
         } else {
-          chords.push({ position: parseFloat(pos), notes: notes });
+          transformedPositions.push(parseFloat(pos));
+          transformedMIDIs.push(notes[0]);
         }
       }
 
       chordsGlobal = chords;
+
+      console.log('Chords detected:', chords);
+      console.log('Single notes count:', transformedMIDIs.length);
+
       return { transformedPositions, transformedMIDIs };
     }
 
@@ -83,52 +84,65 @@
 
     function processCSV() {
       const fileInput = document.getElementById('csvFile');
-      const reader = new FileReader();
+      const output = document.getElementById('output');
 
-      reader.onload = function (e) {
-        const text = e.target.result;
-        const parsedData = parseCSV(text);
-        const { transformedPositions, transformedMIDIs } = groupNotes(parsedData);
-        const intervals = getIntervals(transformedMIDIs);
-        globalIntervals = intervals;
-        patternsDict = [];
-
-        document.getElementById('output').textContent =
-          `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
-          `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
-          `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
-          `Intervals:\n${JSON.stringify(intervals)}`;
-      };
-
-      if (fileInput.files.length > 0) {
-        reader.readAsText(fileInput.files[0]);
-      } else {
-        alert("Please upload a CSV file first.");
-      }
-    }
-
-    function findMotifs() {
-      if (!globalIntervals.length) {
-        alert("Please process a MIDI CSV first.");
+      if (!fileInput.files.length) {
+        alert('Please upload a CSV file first.');
         return;
       }
 
-      const minCount = parseInt(document.getElementById('minCount').value);
-      const minLength = parseInt(document.getElementById('minLength').value);
-      const maxLength = parseInt(document.getElementById('maxLength').value);
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        try {
+          const text = e.target.result;
+          const parsedData = parseCSV(text);
+          const { transformedPositions, transformedMIDIs } = groupNotes(parsedData);
+          globalIntervals = getIntervals(transformedMIDIs);
+
+          output.textContent =
+            `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
+            `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
+            `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
+            `Intervals:\n${JSON.stringify(globalIntervals)}`;
+        } catch (err) {
+          output.textContent = 'Error processing CSV: ' + err.message;
+          console.error(err);
+        }
+      };
+
+      reader.readAsText(fileInput.files[0]);
+    }
+
+    function findMotifs() {
+      const output = document.getElementById('output');
+
+      if (!globalIntervals.length) {
+        alert('Please process a MIDI CSV first.');
+        return;
+      }
+
+      const minCount = parseInt(document.getElementById('minCount').value, 10);
+      const minLength = parseInt(document.getElementById('minLength').value, 10);
+      const maxLength = parseInt(document.getElementById('maxLength').value, 10);
       const minSignificance = parseFloat(document.getElementById('minSignificance').value);
 
-      const intervals = globalIntervals;
+      if (minLength > maxLength) {
+        alert('Min Motif Length cannot be greater than Max Motif Length.');
+        return;
+      }
+
       const motifMap = new Map();
 
       for (let n = minLength; n <= maxLength; n++) {
-        for (let i = 0; i <= intervals.length - n; i++) {
-          const gram = intervals.slice(i, i + n).join(',');
+        for (let i = 0; i <= globalIntervals.length - n; i++) {
+          const gram = globalIntervals.slice(i, i + n).join(',');
           motifMap.set(gram, (motifMap.get(gram) || 0) + 1);
         }
       }
 
-      const totalLength = intervals.length;
+      const totalLength = globalIntervals.length;
+
       motifStats = [...motifMap.entries()]
         .map(([pattern, count]) => {
           const length = pattern.split(',').length;
@@ -142,18 +156,18 @@
         `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`
       ).join('\n');
 
-      document.getElementById('output').textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
+      output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
     }
 
     function downloadPatterns() {
       if (!motifStats.length) {
-        alert("No patterns to export.");
+        alert('No patterns to export.');
         return;
       }
 
       let csv = 'Motif,Count,Length,Significance\n';
       csv += motifStats.map(m =>
-        `"[${m.pattern}]",${m.count},${m.length},${m.significance.toFixed(4)}`
+        `"["${m.pattern}"]",${m.count},${m.length},${m.significance.toFixed(4)}`
       ).join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
@@ -163,6 +177,7 @@
       a.href = url;
       a.download = 'motifs.csv';
       a.click();
+
       URL.revokeObjectURL(url);
     }
   </script>
