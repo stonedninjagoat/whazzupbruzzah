@@ -21,6 +21,7 @@
     let patternsDict = [];
     let globalIntervals = [];
     let chordsGlobal = [];
+    let motifStats = [];
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -70,21 +71,6 @@
       return intervals;
     }
 
-    function findPatterns(intervals) {
-      const maxLen = Math.floor(intervals.length / 2);
-      const patterns = new Set();
-
-      for (let len = maxLen; len >= 2; len--) {
-        for (let i = 0; i <= intervals.length - len; i++) {
-          const pattern = intervals.slice(i, i + len).join(',');
-          const count = intervals.join(',').split(pattern).length - 1;
-          if (count > 1) patterns.add(pattern);
-        }
-      }
-
-      return Array.from(patterns).map(p => p.split(',').map(Number));
-    }
-
     function processCSV() {
       const fileInput = document.getElementById('csvFile');
       const reader = new FileReader();
@@ -95,15 +81,13 @@
         const { transformedPositions, transformedMIDIs } = groupNotes(parsedData);
         const intervals = getIntervals(transformedMIDIs);
         globalIntervals = intervals;
-        const patterns = findPatterns(intervals);
-        patternsDict = patterns;
+        patternsDict = [];
 
         document.getElementById('output').textContent =
           `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
           `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
           `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
-          `Intervals:\n${JSON.stringify(intervals)}\n\n` +
-          `Patterns:\n${JSON.stringify(patternsDict)}`;
+          `Intervals:\n${JSON.stringify(intervals)}`;
       };
 
       if (fileInput.files.length > 0) {
@@ -114,18 +98,20 @@
     }
 
     function downloadPatterns() {
-      if (!patternsDict.length) {
+      if (!motifStats.length) {
         alert("No patterns to export.");
         return;
       }
 
-      const csv = patternsDict.map(p => p.join(',')).join('\n');
+      let csv = 'Motif,Length,Count,Significance\n';
+      csv += motifStats.map(m => `${m.pattern},${m.length},${m.count},${m.significance.toFixed(4)}`).join('\n');
+
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'patterns.csv';
+      a.download = 'motif_patterns.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -150,11 +136,17 @@
         }
       }
 
-      const filtered = [...motifMap.entries()]
+      const totalLength = intervals.length;
+      motifStats = [...motifMap.entries()]
         .filter(([_, count]) => count >= minCount)
-        .sort((a, b) => b[1] - a[1]);
+        .map(([pattern, count]) => {
+          const length = pattern.split(',').length;
+          const significance = (count * length) / totalLength;
+          return { pattern, count, length, significance };
+        })
+        .sort((a, b) => b.significance - a.significance);
 
-      const motifsOutput = filtered.map(([gram, count]) => `Motif: [${gram}] x ${count}`).join('\n');
+      const motifsOutput = motifStats.map(m => `Motif: [${m.pattern}] | Count: ${m.count} | Length: ${m.length} | Significance: ${m.significance.toFixed(4)}`).join('\n');
 
       document.getElementById('output').textContent += `\n\nMotifs (n-grams with freq >= ${minCount}):\n${motifsOutput}`;
     }
