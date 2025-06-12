@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>MIDI Pattern Extractor</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsmidgen@0.2.2/build/midigen.min.js"></script>
 </head>
 <body>
   <h2>MIDI Pattern Extractor Tool</h2>
@@ -18,6 +19,7 @@
   <button onclick="generateMusic()">Generate Music from Motifs</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <pre id="output"></pre>
+  <div id="midiOutput"></div>
 
   <script>
     let globalIntervals = [];
@@ -158,45 +160,40 @@
       output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
     }
 
-   function downloadPatterns() {
-  const fileInput = document.getElementById('csvFile');
-  if (!fileInput.files.length) {
-    alert('Please upload a CSV file first.');
-    return;
-  }
+    function downloadPatterns() {
+      const fileInput = document.getElementById('csvFile');
+      if (!fileInput.files.length) {
+        alert('Please upload a CSV file first.');
+        return;
+      }
 
-  if (!motifStats.length) {
-    alert('No patterns to export.');
-    return;
-  }
+      if (!motifStats.length) {
+        alert('No patterns to export.');
+        return;
+      }
 
-  const fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, ""); // Remove .csv extension
-  const base = `"${fileName}_patterns.csv"`;
+      const fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, ""); // Remove .csv extension
 
-  let csv = `Motif,Count,Length,Significance\n`;
-  csv += motifStats.map(m =>
-    `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`
-  ).join('\n');
+      let csv = `Motif,Count,Length,Significance\n`;
+      csv += motifStats.map(m =>
+        `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`
+      ).join('\n');
 
-  // Add section for extra data
-  csv += `\n\n=== Summary Data ===\n`;
-  csv += `Transformed Positions,"${globalIntervals.length ? globalIntervals.map((_, i) => i).join(', ') : 'N/A'}"\n`;
-  csv += `Chords Detected,${chordsGlobal.length}\n`;
-  csv += `Intervals,"${globalIntervals.join(', ')}"\n`;
+      // Extra data
+      csv += `\n\n=== Summary Data ===\n`;
+      csv += `Chords Detected,${chordsGlobal.length}\n`;
+      csv += `Intervals,"${globalIntervals.join(', ')}"\n`;
 
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${fileName}_patterns.csv`;
-  a.click();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName}_patterns.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
-  URL.revokeObjectURL(url);
-}
-
-
-    // New: build transition map from motifs
     function buildMotifTransitions(motifs, intervals) {
       const motifPatterns = motifs.map(m => ({
         pattern: m.pattern,
@@ -256,7 +253,6 @@
 
     function generateMotifSequence(transitions, motifs, maxMotifs = 20) {
       if (!motifs.length) return [];
-
       let current = motifs[Math.floor(Math.random() * motifs.length)].pattern;
       const result = [];
 
@@ -294,7 +290,26 @@
       const generatedIntervals = generateMotifSequence(transitions, motifStats);
       const generatedNotes = intervalsToMIDINotes(generatedIntervals);
 
-      output.textContent += `\n\nGenerated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}`;
+      output.textContent = `Generated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}\n\n` + output.textContent;
+
+      const file = new Midi();
+      const track = new Midi.Track();
+      file.addTrack(track);
+      const duration = 64;
+
+      generatedNotes.forEach(note => {
+        track.addNote(0, Midi.Util.midiPitchFromNoteNumber(note), duration);
+      });
+
+      const midiBlob = new Blob([file.toBytes()], { type: 'audio/midi' });
+      const url = URL.createObjectURL(midiBlob);
+
+      const container = document.getElementById('midiOutput');
+      container.innerHTML = `
+        <h3>🎵 Playback</h3>
+        <audio controls src="${url}"></audio><br>
+        <a href="${url}" download="generated_music.mid">Download MIDI File</a>
+      `;
     }
   </script>
 </body>
