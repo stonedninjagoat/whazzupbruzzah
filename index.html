@@ -336,7 +336,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = '${fileName}_Generated.csv';
+      a.download = `${fileName}_output.csv`
       a.click();
       URL.revokeObjectURL(url);
     }
