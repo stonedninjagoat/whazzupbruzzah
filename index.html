@@ -158,27 +158,43 @@
       output.textContent += `\n\nMotifs (freq >= ${minCount}, significance >= ${minSignificance}):\n${motifsOutput}`;
     }
 
-    function downloadPatterns() {
-      if (!motifStats.length) {
-        alert('No patterns to export.');
-        return;
-      }
+   function downloadPatterns() {
+  const fileInput = document.getElementById('csvFile');
+  if (!fileInput.files.length) {
+    alert('Please upload a CSV file first.');
+    return;
+  }
 
-      let csv = 'Motif,Count,Length,Significance\n';
-      csv += motifStats.map(m =>
-        `"["${m.pattern}"]",${m.count},${m.length},${m.significance.toFixed(4)}`
-      ).join('\n');
+  if (!motifStats.length) {
+    alert('No patterns to export.');
+    return;
+  }
 
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
+  const fileName = fileInput.files[0].name.replace(/\.[^/.]+$/, ""); // Remove .csv extension
+  const base = `"${fileName}_patterns.csv"`;
 
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'motifs.csv';
-      a.click();
+  let csv = `Motif,Count,Length,Significance\n`;
+  csv += motifStats.map(m =>
+    `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`
+  ).join('\n');
 
-      URL.revokeObjectURL(url);
-    }
+  // Add section for extra data
+  csv += `\n\n=== Summary Data ===\n`;
+  csv += `Transformed Positions,"${globalIntervals.length ? globalIntervals.map((_, i) => i).join(', ') : 'N/A'}"\n`;
+  csv += `Chords Detected,${chordsGlobal.length}\n`;
+  csv += `Intervals,"${globalIntervals.join(', ')}"\n`;
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${fileName}_patterns.csv`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
 
     // New: build transition map from motifs
     function buildMotifTransitions(motifs, intervals) {
