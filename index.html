@@ -314,7 +314,7 @@
       const url = URL.createObjectURL(midiBlob);
 
       container.innerHTML = `
-        <h3>🎵 Generated MIDI</h3>
+        <h3>Generated MIDI</h3>
         <audio controls src="${url}"></audio><br>
         <a href="${url}" download="generated_music.mid">Download MIDI File</a>
       `;
@@ -336,7 +336,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'generated_music_notes.csv';
+      a.download = '${fileName}_Generated.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
