@@ -103,8 +103,8 @@
         return;
       }
 
-      let csv = 'Motif,Length,Count,Significance\n';
-      csv += motifStats.map(m => `${m.pattern},${m.length},${m.count},${m.significance.toFixed(4)}`).join('\n');
+      let csv = 'Motif,Count,Length,Significance\n';
+      csv += motifStats.map(m => `"${m.pattern}",${m.count},${m.length},${m.significance.toFixed(4)}`).join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
