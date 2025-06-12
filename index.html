@@ -41,27 +41,38 @@
 
     // Updated function: remove all notes that are part of chords (multi-note at same position)
     function groupNotes(data) {
-      const chords = [];
-      const transformedPositions = [];
-      const transformedMIDIs = [];
+  const chords = [];
+  const transformedPositions = [];
+  const transformedMIDIs = [];
 
-      const grouped = data.reduce((acc, note) => {
-        const key = note.position.toFixed(5);
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(note.midi);
-        return acc;
-      }, {});
+  // Group notes by position with high precision
+  const grouped = data.reduce((acc, note) => {
+    const key = note.position.toFixed(5);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(note.midi);
+    return acc;
+  }, {});
 
-      for (const [pos, notes] of Object.entries(grouped)) {
-        if (notes.length === 1) {
-          // Only keep single notes in the transformed list
-          transformedPositions.push(parseFloat(pos));
-          transformedMIDIs.push(notes[0]);
-        } else {
-          // Store the chord (all notes) but DO NOT include these notes in the single note lists
-          chords.push({ position: parseFloat(pos), notes: notes });
-        }
-      }
+  // Find all positions that have chords (more than one note)
+  const chordPositions = new Set(
+    Object.entries(grouped)
+      .filter(([pos, notes]) => notes.length > 1)
+      .map(([pos]) => pos)
+  );
+
+  // Now add only notes whose position is NOT in chordPositions
+  for (const [pos, notes] of Object.entries(grouped)) {
+    if (!chordPositions.has(pos)) {
+      transformedPositions.push(parseFloat(pos));
+      transformedMIDIs.push(notes[0]); // only one note here
+    } else {
+      chords.push({ position: parseFloat(pos), notes: notes });
+    }
+  }
+
+  chordsGlobal = chords;
+  return { transformedPositions, transformedMIDIs };
+}
 
       chordsGlobal = chords;
       return { transformedPositions, transformedMIDIs };
