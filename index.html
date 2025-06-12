@@ -15,6 +15,7 @@
   </div>
   <button onclick="processCSV()">Process MIDI CSV</button>
   <button onclick="findMotifs()">Find Motifs (n-grams)</button>
+  <button onclick="generateMusic()">Generate Music from Motifs</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <pre id="output"></pre>
 
@@ -48,7 +49,6 @@
       const transformedPositions = [];
       const transformedMIDIs = [];
 
-      // Group notes by position (fixed to 5 decimals for precision)
       const grouped = data.reduce((acc, note) => {
         const key = note.position.toFixed(5);
         if (!acc[key]) acc[key] = [];
@@ -56,7 +56,6 @@
         return acc;
       }, {});
 
-      // Separate chords (positions with multiple notes) from single notes
       for (const [pos, notes] of Object.entries(grouped)) {
         if (notes.length > 1) {
           chords.push({ position: parseFloat(pos), notes });
@@ -179,6 +178,107 @@
       a.click();
 
       URL.revokeObjectURL(url);
+    }
+
+    // New: build transition map from motifs
+    function buildMotifTransitions(motifs, intervals) {
+      const motifPatterns = motifs.map(m => ({
+        pattern: m.pattern,
+        arr: m.pattern.split(',').map(x => parseInt(x, 10))
+      }));
+
+      const transitions = new Map();
+
+      for (let i = 0; i < intervals.length; i++) {
+        for (const motifA of motifPatterns) {
+          const lenA = motifA.arr.length;
+          if (i + lenA > intervals.length) continue;
+
+          let matchA = true;
+          for (let j = 0; j < lenA; j++) {
+            if (intervals[i + j] !== motifA.arr[j]) {
+              matchA = false;
+              break;
+            }
+          }
+          if (!matchA) continue;
+
+          const nextStart = i + lenA;
+          for (const motifB of motifPatterns) {
+            const lenB = motifB.arr.length;
+            if (nextStart + lenB > intervals.length) continue;
+
+            let matchB = true;
+            for (let k = 0; k < lenB; k++) {
+              if (intervals[nextStart + k] !== motifB.arr[k]) {
+                matchB = false;
+                break;
+              }
+            }
+            if (!matchB) continue;
+
+            if (!transitions.has(motifA.pattern)) transitions.set(motifA.pattern, new Map());
+            const nextMap = transitions.get(motifA.pattern);
+            nextMap.set(motifB.pattern, (nextMap.get(motifB.pattern) || 0) + 1);
+          }
+        }
+      }
+
+      return transitions;
+    }
+
+    function chooseWeighted(map) {
+      let total = 0;
+      for (const weight of map.values()) total += weight;
+      let r = Math.random() * total;
+      for (const [item, weight] of map.entries()) {
+        if (r < weight) return item;
+        r -= weight;
+      }
+      return null;
+    }
+
+    function generateMotifSequence(transitions, motifs, maxMotifs = 20) {
+      if (!motifs.length) return [];
+
+      let current = motifs[Math.floor(Math.random() * motifs.length)].pattern;
+      const result = [];
+
+      for (let i = 0; i < maxMotifs; i++) {
+        const intervalsArr = current.split(',').map(x => parseInt(x, 10));
+        result.push(...intervalsArr);
+
+        const nextMap = transitions.get(current);
+        if (!nextMap) break;
+
+        current = chooseWeighted(nextMap);
+        if (!current) break;
+      }
+
+      return result;
+    }
+
+    function intervalsToMIDINotes(intervals, basePitch = 60) {
+      const notes = [basePitch];
+      for (const interval of intervals) {
+        notes.push(notes[notes.length - 1] + interval);
+      }
+      return notes;
+    }
+
+    function generateMusic() {
+      const output = document.getElementById('output');
+
+      if (!motifStats.length || !globalIntervals.length) {
+        alert('Run "Find Motifs" first.');
+        return;
+      }
+
+      const transitions = buildMotifTransitions(motifStats, globalIntervals);
+      const generatedIntervals = generateMotifSequence(transitions, motifStats);
+      const generatedNotes = intervalsToMIDINotes(generatedIntervals);
+
+      output.textContent += `\n\nGenerated Music:\nIntervals: ${generatedIntervals.join(', ')}\nMIDI Notes: ${generatedNotes.join(', ')}`;
     }
   </script>
 </body>
