@@ -7,6 +7,11 @@
 <body>
   <h2>MIDI Pattern Extractor Tool</h2>
   <input type="file" id="csvFile" accept=".csv">
+  <div>
+    <label>Min Motif Length: <input type="number" id="minLength" value="2"></label>
+    <label>Max Motif Length: <input type="number" id="maxLength" value="6"></label>
+    <label>Min Frequency: <input type="number" id="minCount" value="2"></label>
+  </div>
   <button onclick="processCSV()">Process MIDI CSV</button>
   <button onclick="downloadPatterns()">Download Patterns CSV</button>
   <button onclick="findMotifs()">Find Motifs (n-grams)</button>
@@ -15,6 +20,7 @@
   <script>
     let patternsDict = [];
     let globalIntervals = [];
+    let chordsGlobal = [];
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
@@ -52,7 +58,8 @@
         }
       }
 
-      return { transformedPositions, transformedMIDIs, chords };
+      chordsGlobal = chords;
+      return { transformedPositions, transformedMIDIs };
     }
 
     function getIntervals(midiList) {
@@ -85,7 +92,7 @@
       reader.onload = function (e) {
         const text = e.target.result;
         const parsedData = parseCSV(text);
-        const { transformedPositions, transformedMIDIs, chords } = groupNotes(parsedData);
+        const { transformedPositions, transformedMIDIs } = groupNotes(parsedData);
         const intervals = getIntervals(transformedMIDIs);
         globalIntervals = intervals;
         const patterns = findPatterns(intervals);
@@ -94,7 +101,7 @@
         document.getElementById('output').textContent =
           `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
           `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
-          `Chords:\n${JSON.stringify(chords)}\n\n` +
+          `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
           `Intervals:\n${JSON.stringify(intervals)}\n\n` +
           `Patterns:\n${JSON.stringify(patternsDict)}`;
       };
@@ -129,11 +136,11 @@
         return;
       }
 
-      const intervals = globalIntervals;
-      const minCount = 2;
-      const minLength = 2;
-      const maxLength = 6;
+      const minCount = parseInt(document.getElementById('minCount').value);
+      const minLength = parseInt(document.getElementById('minLength').value);
+      const maxLength = parseInt(document.getElementById('maxLength').value);
 
+      const intervals = globalIntervals;
       const motifMap = new Map();
 
       for (let n = minLength; n <= maxLength; n++) {
