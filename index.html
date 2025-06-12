@@ -39,6 +39,7 @@
       });
     }
 
+    // Updated function: remove all notes that are part of chords (multi-note at same position)
     function groupNotes(data) {
       const chords = [];
       const transformedPositions = [];
@@ -53,10 +54,12 @@
 
       for (const [pos, notes] of Object.entries(grouped)) {
         if (notes.length === 1) {
+          // Only keep single notes in the transformed list
           transformedPositions.push(parseFloat(pos));
           transformedMIDIs.push(notes[0]);
         } else {
-          chords.push(notes);
+          // Store the chord (all notes) but DO NOT include these notes in the single note lists
+          chords.push({ position: parseFloat(pos), notes: notes });
         }
       }
 
@@ -84,11 +87,13 @@
         globalIntervals = intervals;
         patternsDict = [];
 
-        document.getElementById('output').textContent =
-          `Transformed Positions:\n${JSON.stringify(transformedPositions)}\n\n` +
-          `Transformed MIDIs:\n${JSON.stringify(transformedMIDIs)}\n\n` +
-          `Chords:\n${JSON.stringify(chordsGlobal)}\n\n` +
+        let outputText = 
+          `Transformed Positions (single notes only):\n${JSON.stringify(transformedPositions)}\n\n` +
+          `Transformed MIDIs (single notes only):\n${JSON.stringify(transformedMIDIs)}\n\n` +
+          `Chords (all notes at same position removed from singles):\n${JSON.stringify(chordsGlobal)}\n\n` +
           `Intervals:\n${JSON.stringify(intervals)}`;
+
+        document.getElementById('output').textContent = outputText;
       };
 
       if (fileInput.files.length > 0) {
